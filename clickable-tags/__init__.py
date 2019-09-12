@@ -28,7 +28,7 @@ def linkHandler(self, url, _old):
     if url.startswith('ct_click_'):
         tag = url.replace('ct_click_', '')
         browser = dialogs.open('Browser', self.mw)
-        browser.setFilter('\'tag:%s\'' % tag) #Quotes around tag should allow for spaces in tag name
+        browser.setFilter('\"tag:%s\"' % tag) #Quotes around tag should allow for spaces in tag name
     elif url.startswith('ct_dblclick_'):
         tag, deck = url.replace('ct_dblclick_', '').split('|')
         browser = dialogs.open('Browser', self.mw)
