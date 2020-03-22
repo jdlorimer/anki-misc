@@ -1,5 +1,6 @@
 # Copyright 2013 Abdolmahdi Saravi <amsaravi@yahoo.com>
-# Copyright 2019 Joseph Lorimer <joseph@lorimer.me>
+# Copyright 2020 Damien Elmes <https://apps.ankiweb.net/>
+# Copyright 2019-2020 Joseph Lorimer <joseph@lorimer.me>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -14,36 +15,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from re import sub
-
-from anki.cards import Card
-from anki.hooks import wrap
-from anki.template import Template
-from aqt import dialogs
+from anki import hooks
+from anki.template import TemplateRenderContext
+from aqt import dialogs, gui_hooks, mw
+from aqt.browser import PreviewDialog
+from aqt.clayout import CardLayout
 from aqt.qt import Qt
 from aqt.reviewer import Reviewer
+from aqt.utils import tooltip
 
-
-def linkHandler(self, url, _old):
-    if url.startswith('ct_click_'):
-        tag = url.replace('ct_click_', '')
-        browser = dialogs.open('Browser', self.mw)
-        browser.setFilter('"tag:%s"' % tag)
-    elif url.startswith('ct_dblclick_'):
-        tag, deck = url.replace('ct_dblclick_', '').split('|')
-        browser = dialogs.open('Browser', self.mw)
-        browser.setFilter('"tag:%s" "deck:%s"' % (tag, deck))
-        browser.setWindowState(
-            browser.windowState() & ~Qt.WindowMinimized | Qt.WindowActive
-        )
-    else:
-        return _old(self, url)
-
-
-def css(self, _old):
-    return (
-        _old(self)
-        + """
+CSS = """
 <style>
   kbd {
     box-shadow: inset 0 1px 0 0 white;
@@ -69,13 +50,14 @@ def css(self, _old):
     cursor: pointer;
     cursor: hand;
   }
+  .nightMode kbd {
+    color: black;
+  }
 </style>
 """
-    )
 
 
-def render(self, template, context, encoding, _old):
-    js = """
+JS = """
 <script type="text/javascript">
   function ct_click(tag) {
     pycmd("ct_click_" + tag)
@@ -85,24 +67,60 @@ def render(self, template, context, encoding, _old):
   }
 </script>
 """
+
+
+def handle_click(handled, msg, context):
+    if isinstance(context, CardLayout) and (
+        msg.startswith('ct_click_') or msg.startswith('ct_dblclick_')
+    ):
+        tooltip("Can't be used in card layout screen.")
+        return handled
+
+    if not isinstance(context, Reviewer) and not isinstance(
+        context, PreviewDialog
+    ):
+        return handled
+
+    if msg.startswith('ct_click_'):
+        tag = msg.replace('ct_click_', '')
+        browser = dialogs.open('Browser', mw)
+        browser.setFilter('"tag:%s"' % tag)
+        return True, None
+    elif msg.startswith('ct_dblclick_'):
+        tag, deck = msg.replace('ct_dblclick_', '').split('|')
+        browser = dialogs.open('Browser', mw)
+        browser.setFilter('"tag:%s" "deck:%s"' % (tag, deck))
+        browser.setWindowState(
+            browser.windowState() & ~Qt.WindowMinimized | Qt.WindowActive
+        )
+        return True, None
+
+    return handled
+
+
+def append_to_card(output, context):
+    output.question_text += CSS + JS
+    output.answer_text += CSS + JS
+
+
+def on_field_filter(text, field, filter, context: TemplateRenderContext):
+    if filter != 'clickable' or field != 'Tags':
+        return text
+
     kbd = """
 <kbd onclick="ct_click('{tag}')" ondblclick="ct_dblclick('{tag}', '{deck}')">
   {tag}
 </kbd>
 """
-    template = template or self.template
-    context = context or self.context
-    if context is not None:
-        s = ''.join(
-            [
-                kbd.format(tag=tag, deck=context['Deck'])
-                for tag in context['Tags'].split()
-            ]
-        )
-        template = sub('{{Tags}}', s + js, template)
-    return _old(self, template, context, encoding)
+
+    return ''.join(
+        [
+            kbd.format(tag=tag, deck=context.fields()['Deck'])
+            for tag in context.fields()['Tags'].split()
+        ]
+    )
 
 
-Card.css = wrap(Card.css, css, 'around')
-Reviewer._linkHandler = wrap(Reviewer._linkHandler, linkHandler, 'around')
-Template.render = wrap(Template.render, render, 'around')
+gui_hooks.webview_did_receive_js_message.append(handle_click)
+hooks.card_did_render.append(append_to_card)
+hooks.field_filter.append(on_field_filter)

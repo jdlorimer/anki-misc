@@ -1,4 +1,4 @@
-# Copyright © 2019 Joseph Lorimer <joseph@lorimer.me>
+# Copyright © 2019-2020 Joseph Lorimer <joseph@lorimer.me>
 #
 # Permission to use, copy, modify, and distribute this software for any
 # purpose with or without fee is hereby granted, provided that the above
@@ -15,8 +15,7 @@
 import re
 import warnings
 
-from anki.hooks import addHook
-from aqt import QDialog, QFont
+from aqt import gui_hooks, QDialog, QFont
 from aqt.utils import openHelp
 import aqt
 
@@ -47,14 +46,18 @@ def _onHtmlEdit(self, field):
     form.textEdit.setFont(font)
     form.textEdit.setPlainText(prettify(self.note.fields[field]))
     d.resize(700, 600)
+    d.show()
     d.exec_()
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore', UserWarning)
-        self.note.fields[field] = str(
-            BeautifulSoup(
-                postprocess(form.textEdit.toPlainText()), 'html.parser'
+    html = form.textEdit.toPlainText()
+    if html.find('>') > -1:
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', UserWarning)
+            html = str(
+                BeautifulSoup(
+                    postprocess(form.textEdit.toPlainText()), 'html.parser'
+                )
             )
-        )
+    self.note.fields[field] = html
     self.note.flush()
     self.loadNote(focusTo=field)
 
@@ -122,5 +125,5 @@ def remap(cuts, editor):
     cuts.append(('F12', editor.onHtmlEdit))
 
 
+gui_hooks.editor_did_init_shortcuts.append(remap)
 aqt.editor.Editor._onHtmlEdit = _onHtmlEdit
-addHook('setupEditorShortcuts', remap)
