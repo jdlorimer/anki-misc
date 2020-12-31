@@ -16,7 +16,8 @@ import re
 import warnings
 
 from aqt import gui_hooks, QDialog, QFont
-from aqt.utils import openHelp
+from aqt.utils import openHelp, saveGeom
+from aqt.qt import qconnect
 import aqt
 
 from bs4 import BeautifulSoup
@@ -40,7 +41,7 @@ def _onHtmlEdit(self, field):
     d = QDialog(self.widget)
     form = aqt.forms.edithtml.Ui_Dialog()
     form.setupUi(d)
-    form.buttonBox.helpRequested.connect(lambda: openHelp('editor'))
+    qconnect(form.buttonBox.helpRequested, lambda: openHelp("editing?id=features"))
     font = QFont('Iosevka')
     font.setStyleHint(QFont.Monospace)
     form.textEdit.setFont(font)
@@ -50,16 +51,20 @@ def _onHtmlEdit(self, field):
     d.exec_()
     html = form.textEdit.toPlainText()
     if html.find('>') > -1:
+        # filter html through beautifulsoup so we can strip out things like a
+        # leading </div>
+        html_escaped = self.mw.col.media.escape_media_filenames(html)
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', UserWarning)
-            html = str(
-                BeautifulSoup(
-                    postprocess(form.textEdit.toPlainText()), 'html.parser'
-                )
+            html_escaped = str(BeautifulSoup(html_escaped, "html.parser"))
+            html = self.mw.col.media.escape_media_filenames(
+                html_escaped, unescape=True
             )
     self.note.fields[field] = html
-    self.note.flush()
+    if not self.addMode:
+      self.note.flush()
     self.loadNote(focusTo=field)
+    saveGeom(d, "htmlEditor")
 
 
 def prettify(s):
